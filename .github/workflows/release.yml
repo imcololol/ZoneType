@@ -1,0 +1,76 @@
+# Builds ZoneType-<tag>-forever.zip, attaches it to the GitHub release,
+# and uploads it to CurseForge (if the CF_API_KEY secret is set).
+# Runs when a release is published on GitHub. (Only this one trigger: publishing
+# a release also creates its tag, so a tag trigger as well would run twice and
+# the two runs would fight over the zip.)
+name: Package release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      CF_PROJECT_ID: "" # add once the CurseForge project exists
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version in .toc from the release tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^## Version:.*/## Version: ${VERSION}/" addon/ZoneType/ZoneType.toc
+
+      - name: Build zip
+        run: |
+          cd addon
+          zip -r "../ZoneType-${GITHUB_REF_NAME}-forever.zip" ZoneType
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v tag="## ${GITHUB_REF_NAME}" '$0==tag{f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "See CHANGELOG.md" > notes.md; fi
+
+      - name: Create or update the release and attach the zip
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: notes.md
+          files: ZoneType-*-forever.zip
+
+      - name: Upload to CurseForge
+        if: ${{ env.CF_API_KEY != '' && env.CF_PROJECT_ID != '' }}
+        run: |
+          set -euo pipefail
+          # Game version from the .toc, e.g. Interface 16001 -> 1.60.1
+          INTERFACE=$(grep -m1 '^## Interface:' addon/ZoneType/ZoneType.toc | sed 's/.*: *//' | cut -d, -f1 | tr -d ' \r')
+          GAMEVER="$((INTERFACE / 10000)).$(((INTERFACE / 100) % 100)).$((INTERFACE % 100))"
+          echo "Looking for CurseForge game version $GAMEVER"
+
+          curl -sS --fail-with-body -H "x-api-token: $CF_API_KEY" \
+            https://wow.curseforge.com/api/game/versions > versions.json
+          IDS=$(jq -c --arg v "$GAMEVER" '[.[] | select(.name == $v) | .id]' versions.json)
+          if [ "$IDS" = "[]" ]; then
+            echo "::error::CurseForge has no game version named $GAMEVER. Closest matches:"
+            jq -r --arg m "$((INTERFACE / 10000)).$(((INTERFACE / 100) % 100))" \
+              '.[] | select(.name | startswith($m)) | "\(.id)  \(.name)  (type \(.gameVersionTypeID))"' versions.json
+            exit 1
+          fi
+          echo "Using CurseForge game version id(s): $IDS"
+
+          jq -n --arg name "ZoneType ${GITHUB_REF_NAME}" --rawfile notes notes.md --argjson ids "$IDS" \
+            '{displayName: $name, releaseType: "release", changelog: $notes, changelogType: "markdown", gameVersions: $ids}' \
+            > metadata.json
+
+          curl -sS --fail-with-body -H "x-api-token: $CF_API_KEY" \
+            -F "metadata=<metadata.json" \
+            -F "file=@ZoneType-${GITHUB_REF_NAME}-forever.zip" \
+            "https://wow.curseforge.com/api/projects/${CF_PROJECT_ID}/upload-file"
+          echo
+          echo "Uploaded to CurseForge."
