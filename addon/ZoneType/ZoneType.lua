@@ -227,12 +227,12 @@ local function Report(auto)
         return
     end
 
-    -- Several matches, e.g. a town inside a zone (Booty Bay in Stranglethorn).
-    -- We don't know for sure whether the game counts both, so show each.
-    Print("You count as: " .. TypeText(CombinedTypes(matches)))
-    for _, m in ipairs(matches) do
-        Print("   " .. m.place.name .. ": " .. TypeText(m.place.types))
-    end
+    -- Several matches, e.g. a town inside a zone (Everlook in Winterspring).
+    -- One line, most specific place first: "Everlook, Winterspring: ..."
+    -- (Lookup finds the zone before the subzone, so walk it backwards.)
+    local placeNames = {}
+    for i = #matches, 1, -1 do placeNames[#placeNames + 1] = matches[i].place.name end
+    Print(table.concat(placeNames, ", ") .. ": " .. TypeText(CombinedTypes(matches)))
 end
 
 local function ListType(query)

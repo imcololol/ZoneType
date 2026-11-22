@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.1
+
+- Fix: in towns inside a zone (like Everlook in Winterspring), the area types now show on one line instead of several indented lines.
+
 ## v0.1.0
 
 - First version. `/zt` shows the area types (Desert, Swamp, Haunted and more) for where you're standing.
