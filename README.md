@@ -35,6 +35,9 @@ You should end up with `AddOns\ZoneType\ZoneType.toc`.
 | `/zt list [type]` | List every place of a type (e.g. `/zt list desert`); with no type, lists the types |
 | `/zt flash` | Turn the on-screen area-type flash on or off |
 | `/zt flash test` | Show a sample flash |
+| `/zt unlock` | Show a box you can drag to move the on-screen text |
+| `/zt lock` | Stop moving it (the spot is saved) |
+| `/zt resetpos` | Put the on-screen text back under the zone name |
 | `/zt auto` | Turn the zone-change message on or off |
 | `/zt where` | Show what the game reports about your location (for bug reports) |
 | `/zt test` | Check that the addon is working |

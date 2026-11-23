@@ -290,15 +290,26 @@ local FLASH = {
 }
 
 local flashFrame = CreateFrame("Frame", nil, UIParent)
-flashFrame:SetSize(600, 80)
+flashFrame:SetSize(520, 40)
 flashFrame:SetFrameStrata("HIGH")
--- Sit just under the subzone line of the game's zone text when we can find it
-if SubZoneTextString then
-    flashFrame:SetPoint("TOP", SubZoneTextString, "BOTTOM", 0, -4)
-else
-    flashFrame:SetPoint("TOP", UIParent, "TOP", 0, -330)
-end
+flashFrame:SetClampedToScreen(true)
+flashFrame:SetMovable(true)
 flashFrame:Hide()
+
+-- Default spot: just under the subzone line of the game's zone text.
+-- If the player has moved it (/zt unlock), use their saved spot instead.
+local function PlaceFlash()
+    flashFrame:ClearAllPoints()
+    local pos = ZoneTypeDB and ZoneTypeDB.flashPos
+    if pos then
+        flashFrame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
+    elseif SubZoneTextString then
+        flashFrame:SetPoint("TOP", SubZoneTextString, "BOTTOM", 0, -4)
+    else
+        flashFrame:SetPoint("TOP", UIParent, "TOP", 0, -330)
+    end
+end
+PlaceFlash()
 
 local flashText = flashFrame:CreateFontString(nil, "OVERLAY")
 -- Same font as the game's subzone line ("Southfury River"), so ours reads
@@ -306,11 +317,24 @@ local flashText = flashFrame:CreateFontString(nil, "OVERLAY")
 local zoneFont = _G.SubZoneTextFont or _G.ZoneTextFont or _G.GameFontNormalLarge
 if zoneFont then flashText:SetFontObject(zoneFont) end
 flashText:SetTextColor(1, 1, 1) -- real colors come from the color codes
-flashText:SetPoint("TOP")
+flashText:SetPoint("CENTER")
 flashText:SetJustifyH("CENTER")
 
+-- Shown only while unlocked: a see-through box and a hint, so there's
+-- something to grab
+local anchorBg = flashFrame:CreateTexture(nil, "BACKGROUND")
+anchorBg:SetAllPoints()
+anchorBg:SetColorTexture(0.2, 0.6, 1, 0.3)
+anchorBg:Hide()
+local anchorHint = flashFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+anchorHint:SetPoint("BOTTOM", flashFrame, "TOP", 0, 2)
+anchorHint:SetText("ZoneType: drag to move, then type /zt lock")
+anchorHint:Hide()
+
+local unlocked = false
 local flashElapsed = 0
 flashFrame:SetScript("OnUpdate", function(self, dt)
+    if unlocked then return end -- stay fully visible while moving it
     flashElapsed = flashElapsed + dt
     local t = flashElapsed
     if t < FLASH.fadeIn then
@@ -324,20 +348,57 @@ flashFrame:SetScript("OnUpdate", function(self, dt)
     end
 end)
 
--- set = area types like { forest = true, desert = true }. Returns true if shown.
-local function ShowFlash(set)
-    local lines = {}
+flashFrame:SetScript("OnMouseDown", function(self, button)
+    if unlocked and button == "LeftButton" then self:StartMoving() end
+end)
+flashFrame:SetScript("OnMouseUp", function(self)
+    if not unlocked then return end
+    self:StopMovingOrSizing()
+    -- StopMovingOrSizing leaves us anchored to UIParent; save that spot
+    local point, _, relPoint, x, y = self:GetPoint(1)
+    ZoneTypeDB.flashPos = { point = point, relPoint = relPoint, x = x, y = y }
+end)
+
+local function FlashLine(set)
+    local parts = {}
     for _, f in ipairs(FLASH) do
-        if set[f.key] then lines[#lines + 1] = "|c" .. f.color .. f.label .. "|r" end
+        if set[f.key] then parts[#parts + 1] = "|c" .. f.color .. f.label .. "|r" end
     end
-    if #lines == 0 then return false end
     -- Places often have several (Tirisfal is Grassland, Wasteland and Haunted),
     -- so keep them on one line instead of stacking down the screen
-    flashText:SetText(table.concat(lines, "  |cffffffff\194\183|r  "))
+    return table.concat(parts, "  |cffffffff\194\183|r  "), #parts
+end
+
+local SAMPLE = { forest = true, desert = true, waste = true, haunted = true }
+
+-- set = area types like { forest = true, desert = true }. Returns true if shown.
+local function ShowFlash(set)
+    if unlocked then return false end -- don't fight the player while they move it
+    local text, count = FlashLine(set)
+    if count == 0 then return false end
+    flashText:SetText(text)
     flashElapsed = 0
     flashFrame:SetAlpha(0)
     flashFrame:Show()
     return true
+end
+
+local function SetUnlocked(on)
+    unlocked = on
+    flashFrame:EnableMouse(on)
+    if on then
+        flashText:SetText((FlashLine(SAMPLE))) -- extra parens: only the text, not the count
+        anchorBg:Show()
+        anchorHint:Show()
+        flashFrame:SetAlpha(1)
+        flashFrame:Show()
+        Print("Unlocked. Drag the blue box to move the on-screen text, then type /zt lock.")
+    else
+        anchorBg:Hide()
+        anchorHint:Hide()
+        flashFrame:Hide()
+        Print("Locked. Type /zt resetpos to put the text back under the zone name.")
+    end
 end
 
 local lastFlashKey -- zone + flash types, so towns inside the same zone don't re-flash
@@ -421,6 +482,7 @@ events:SetScript("OnEvent", function(_, event, ...)
             ZoneTypeDB = ZoneTypeDB or {}
             if ZoneTypeDB.auto == nil then ZoneTypeDB.auto = true end
             if ZoneTypeDB.flash == nil then ZoneTypeDB.flash = true end
+            PlaceFlash() -- saved position is only readable now
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Instance info can lag behind after a loading screen
@@ -446,12 +508,20 @@ SlashCmdList.ZONETYPE = function(msg)
         Print("Announce area type when you change zones:", ZoneTypeDB.auto and "ON" or "OFF")
     elseif cmd == "flash" then
         if rest == "test" then
-            ShowFlash({ forest = true, desert = true, waste = true, haunted = true })
+            ShowFlash(SAMPLE)
             Print("Showing a sample flash.")
         else
             ZoneTypeDB.flash = not ZoneTypeDB.flash
             Print("Flash area types on screen:", ZoneTypeDB.flash and "ON" or "OFF")
         end
+    elseif cmd == "unlock" or cmd == "move" then
+        SetUnlocked(not unlocked)
+    elseif cmd == "lock" then
+        if unlocked then SetUnlocked(false) else Print("Already locked.") end
+    elseif cmd == "resetpos" then
+        ZoneTypeDB.flashPos = nil
+        PlaceFlash()
+        Print("On-screen text moved back under the zone name.")
     elseif cmd == "list" then
         ListType(rest)
     elseif cmd == "where" then
@@ -465,6 +535,8 @@ SlashCmdList.ZONETYPE = function(msg)
         Print("  /zt auto - turn the zone-change message on/off")
         Print("  /zt flash - turn the on-screen area-type flash on/off")
         Print("  /zt flash test - show a sample flash")
+        Print("  /zt unlock / lock - move the on-screen text")
+        Print("  /zt resetpos - put the on-screen text back under the zone name")
         Print("  /zt where - what the game reports about this spot (for bug reports)")
         Print("  /zt test - check the addon is working")
     end
