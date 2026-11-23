@@ -2,7 +2,7 @@
 ## Title: ZoneType
 ## Notes: Tells you which area types (Desert, Swamp, Haunted...) your current zone counts as for area-bonus items.
 ## Author: Cole
-## IconAtlas: Waypoint-MapPin-ChatIcon
+## IconTexture: Interface\AddOns\ZoneType\icon
 ## Version: 0.2.0
 ## SavedVariables: ZoneTypeDB
 

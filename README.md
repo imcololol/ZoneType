@@ -1,3 +1,5 @@
+<img src="media/logo.png" alt="ZoneType logo" width="128" align="right">
+
 # ZoneType
 
 A World of Warcraft: Forever addon that tells you which **area types** your current zone counts as: Desert, Swamp, Forest & Grassland, Haunted and the rest. Many Forever items get a bonus in a certain kind of area, and the game's tooltips name only the area type, never the zones. ZoneType fills that gap.

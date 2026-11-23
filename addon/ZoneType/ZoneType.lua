@@ -832,10 +832,11 @@ mmBg:SetSize(20, 20)
 mmBg:SetPoint("TOPLEFT", 7, -5)
 
 local mmIcon = mm:CreateTexture(nil, "ARTWORK")
-mmIcon:SetSize(18, 18)
-mmIcon:SetPoint("TOPLEFT", 7, -6)
-mmIcon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
-mmIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- trim the icon's built-in border
+mmIcon:SetSize(20, 20)
+mmIcon:SetPoint("TOPLEFT", 6, -5)
+-- Our own map-pin icon (icon.tga in the addon folder; TGA because WoW
+-- addons can't load PNG textures reliably)
+mmIcon:SetTexture("Interface\\AddOns\\ZoneType\\icon")
 
 local mmBorder = mm:CreateTexture(nil, "OVERLAY")
 mmBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
