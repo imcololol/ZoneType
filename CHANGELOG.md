@@ -2,9 +2,11 @@
 
 ## v0.2.0
 
-- New: when you enter a Grassland, Desert, Wasteland or Haunted area, it shows on screen under the zone name in the same style as the game's zone text (Grassland in green, Desert in gold, Wasteland in brown, Haunted in purple). `/zt flash` turns it off, `/zt flash test` shows a sample.
-- New: `/zt unlock` shows a box you can drag to move the on-screen text anywhere. `/zt lock` when done, `/zt resetpos` to put it back under the zone name. The box fits the text.
-- New: `/zt pos <x> <y>` places the on-screen text by numbers (pixels from the middle of the screen), and `/zt pos center` centers it left-to-right. The unlock box shows its current x and y.
+- New: when you enter a new zone, its area types pop up on screen under the zone name, in the same style as the game's zone text (Grassland in green, Desert in gold, Wasteland in brown, Haunted in purple). Several types share one line.
+- New: minimap button. Left-click unlocks the on-screen text so you can move it (left-click again to lock), right-click opens settings, drag to move the button.
+- New: settings (Esc > Options > AddOns > ZoneType, or right-click the minimap button): turn the pop-up on/off, text size, which area types pop up (Grassland, Desert, Wasteland and Haunted by default), the chat message, and the minimap button.
+- New: while unlocked, drag the blue box or type an exact X / Y position under it. Center puts it in the middle left-to-right; Lock saves it.
+- New commands: `/zt settings`, `/zt unlock`, `/zt lock`, `/zt pos <x> <y>`, `/zt pos center`, `/zt resetpos`, `/zt flash`, `/zt flash test`, `/zt minimap`.
 
 ## v0.1.1
 

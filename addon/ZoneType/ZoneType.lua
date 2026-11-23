@@ -276,18 +276,61 @@ local function Where()
 end
 
 ---------------------------------------------------------------------------
--- On-screen flash (Grassland / Desert / Wasteland / Haunted)
+-- Options (saved in ZoneTypeDB; the settings panel and slash commands both
+-- go through GetOption/SetOption so they never disagree)
 ---------------------------------------------------------------------------
 
--- Big text under the game's own zone name, for the area types Cole cares
--- about most. Same feel as the zone text: fade in, hold, fade out.
+-- Area types that can pop up on screen, in the order they're shown.
+-- label = short word on screen; name = what the settings checkbox says.
 local FLASH = {
-    { key = "forest", label = "Grassland", color = "ff00ff00" }, -- plain green
-    { key = "desert", label = "Desert",    color = "ffffd060" }, -- same as chat
-    { key = "waste",  label = "Wasteland", color = "ffb08a5a" }, -- same as chat
-    { key = "haunted", label = "Haunted",  color = "ffa78bd6" }, -- same as chat
+    { key = "forest",   label = "Grassland",   name = "Grassland (Forest & Grassland)", color = "ff00ff00" }, -- plain green
+    { key = "desert",   label = "Desert",      name = "Desert" },
+    { key = "waste",    label = "Wasteland",   name = "Wasteland" },
+    { key = "haunted",  label = "Haunted",     name = "Haunted" },
+    { key = "swamp",    label = "Swamp",       name = "Swamp" },
+    { key = "mountain", label = "Mountainous", name = "Mountainous" },
+    { key = "snowy",    label = "Snowy",       name = "Snowy" },
+    { key = "city",     label = "City",        name = "Strongholds & Cities" },
+    { key = "cave",     label = "Underground", name = "Cavernous/Underground" },
     fadeIn = 0.5, hold = 2.5, fadeOut = 1.5,
 }
+for _, f in ipairs(FLASH) do
+    f.color = f.color or TYPE_BY_KEY[f.key].color -- same colors as the chat message
+end
+-- Tracked unless the player turns them off
+local DEFAULT_TRACKED = { forest = true, desert = true, waste = true, haunted = true }
+
+local blizzSettings = {} -- option id -> Blizzard setting object, once the Options page registers
+local OptionChanged      -- defined after the on-screen text, which it updates
+
+-- "flash" -> ZoneTypeDB.flash, "track_desert" -> ZoneTypeDB.track.desert
+local function OptionSlot(id)
+    if id:sub(1, 6) == "track_" then return ZoneTypeDB.track, id:sub(7) end
+    return ZoneTypeDB, id
+end
+
+local function GetOption(id)
+    local tbl, field = OptionSlot(id)
+    return tbl[field]
+end
+
+local function SetOption(id, value)
+    local bs = blizzSettings[id]
+    -- Going through the Blizzard setting keeps its checkbox in sync and
+    -- fires OptionChanged for us
+    if bs and bs.SetValue and pcall(bs.SetValue, bs, value) then return end
+    local tbl, field = OptionSlot(id)
+    tbl[field] = value
+    OptionChanged(id)
+end
+
+local function IsTracked(key)
+    return ZoneTypeDB and ZoneTypeDB.track and ZoneTypeDB.track[key]
+end
+
+---------------------------------------------------------------------------
+-- On-screen text (the area types, shown under the game's zone name)
+---------------------------------------------------------------------------
 
 local flashFrame = CreateFrame("Frame", nil, UIParent)
 flashFrame:SetSize(520, 40)
@@ -297,7 +340,7 @@ flashFrame:SetMovable(true)
 flashFrame:Hide()
 
 -- Default spot: just under the subzone line of the game's zone text.
--- If the player has moved it (/zt unlock), use their saved spot instead.
+-- If the player has moved it, use their saved spot instead.
 local function PlaceFlash()
     flashFrame:ClearAllPoints()
     local pos = ZoneTypeDB and ZoneTypeDB.flashPos
@@ -320,6 +363,30 @@ flashText:SetTextColor(1, 1, 1) -- real colors come from the color codes
 flashText:SetPoint("CENTER")
 flashText:SetJustifyH("CENTER")
 
+-- Size the font follows by default (the game's subzone text size)
+local function DefaultSize()
+    local _, size = flashText:GetFont()
+    if zoneFont and zoneFont.GetFont then _, size = zoneFont:GetFont() end
+    return math.floor((size or 26) + 0.5)
+end
+local DEFAULT_SIZE = DefaultSize()
+
+-- Fit the frame (and the blue unlock box) to the text, with some padding,
+-- so long lines don't hang off the edges
+local function FitFlash()
+    local w = flashText:GetStringWidth() or 0
+    local h = flashText:GetStringHeight() or 0
+    flashFrame:SetSize(math.max(200, w + 40), math.max(30, h + 16))
+end
+
+local function ApplyFlashSize()
+    local file, _, flags = flashText:GetFont()
+    if zoneFont and zoneFont.GetFont then file, _, flags = zoneFont:GetFont() end
+    local size = (ZoneTypeDB and ZoneTypeDB.flashSize) or DEFAULT_SIZE
+    if file then flashText:SetFont(file, size, flags or "OUTLINE") end
+    FitFlash()
+end
+
 -- Shown only while unlocked: a see-through box and a hint, so there's
 -- something to grab
 local anchorBg = flashFrame:CreateTexture(nil, "BACKGROUND")
@@ -328,7 +395,7 @@ anchorBg:SetColorTexture(0.2, 0.6, 1, 0.3)
 anchorBg:Hide()
 local anchorHint = flashFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 anchorHint:SetPoint("BOTTOM", flashFrame, "TOP", 0, 2)
-anchorHint:SetText("ZoneType: drag to move, then type /zt lock")
+anchorHint:SetText("ZoneType: drag the box, or type a position below")
 anchorHint:Hide()
 
 local unlocked = false
@@ -348,9 +415,6 @@ flashFrame:SetScript("OnUpdate", function(self, dt)
     end
 end)
 
-flashFrame:SetScript("OnMouseDown", function(self, button)
-    if unlocked and button == "LeftButton" then self:StartMoving() end
-end)
 -- Where the text's middle is, in pixels from the middle of the screen
 -- (x: + is right, y: + is up). Rounded so the numbers are easy to type.
 local function GetFlashOffset()
@@ -373,44 +437,36 @@ local function SetFlashOffset(x, y)
     flashFrame:SetPoint("CENTER", UIParent, "CENTER", x, y)
 end
 
-local function ShowFlashOffset()
-    local x, y = GetFlashOffset()
-    anchorHint:SetText(("ZoneType: drag to move, then type /zt lock   (x %d, y %d)"):format(x, y))
-    return x, y
-end
-
-flashFrame:SetScript("OnMouseUp", function(self)
-    if not unlocked then return end
-    self:StopMovingOrSizing()
-    SetFlashOffset(GetFlashOffset())
-    ShowFlashOffset()
-end)
-
 local function FlashLine(set)
     local parts = {}
     for _, f in ipairs(FLASH) do
-        if set[f.key] then parts[#parts + 1] = "|c" .. f.color .. f.label .. "|r" end
+        if set[f.key] and IsTracked(f.key) then
+            parts[#parts + 1] = "|c" .. f.color .. f.label .. "|r"
+        end
     end
     -- Places often have several (Tirisfal is Grassland, Wasteland and Haunted),
     -- so keep them on one line instead of stacking down the screen
     return table.concat(parts, "  |cffffffff\194\183|r  "), #parts
 end
 
-local SAMPLE = { forest = true, desert = true, waste = true, haunted = true }
-
--- Fit the frame (and the blue unlock box) to the text, with some padding,
--- so long lines like all four types don't hang off the edges
-local function FitFlash()
-    local w = flashText:GetStringWidth() or 0
-    local h = flashText:GetStringHeight() or 0
-    flashFrame:SetSize(math.max(200, w + 40), math.max(30, h + 16))
+-- Every type the player tracks, for previews (Grassland if they track none)
+local function SampleSet()
+    local set, any = {}, false
+    for _, f in ipairs(FLASH) do
+        if IsTracked(f.key) then set[f.key] = true; any = true end
+    end
+    if not any then set.forest = true end
+    return set
 end
 
 -- set = area types like { forest = true, desert = true }. Returns true if shown.
-local function ShowFlash(set)
+local function ShowFlash(set, force)
     if unlocked then return false end -- don't fight the player while they move it
     local text, count = FlashLine(set)
-    if count == 0 then return false end
+    if count == 0 then
+        if not force then return false end
+        text = "|cff888888(no area types ticked in settings)|r"
+    end
     flashText:SetText(text)
     FitFlash()
     flashElapsed = 0
@@ -419,27 +475,119 @@ local function ShowFlash(set)
     return true
 end
 
-local function SetUnlocked(on)
+---------------------------------------------------------------------------
+-- Unlock panel: X / Y boxes and buttons under the blue box
+---------------------------------------------------------------------------
+
+local SetUnlocked -- defined below; the Lock button needs it
+
+local posPanel = CreateFrame("Frame", nil, flashFrame)
+posPanel:SetSize(330, 30)
+posPanel:SetPoint("TOP", flashFrame, "BOTTOM", 0, -4)
+posPanel:EnableMouse(true) -- clicks here shouldn't start a drag
+local posBg = posPanel:CreateTexture(nil, "BACKGROUND")
+posBg:SetAllPoints()
+posBg:SetColorTexture(0, 0, 0, 0.6)
+posPanel:Hide()
+
+local function PosLabel(text, anchor, x)
+    local fs = posPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    fs:SetText(text)
+    fs:SetPoint("LEFT", anchor, anchor == posPanel and "LEFT" or "RIGHT", x, 0)
+    return fs
+end
+
+local function PosBox(anchor)
+    local eb = CreateFrame("EditBox", nil, posPanel, "InputBoxTemplate")
+    eb:SetSize(48, 20)
+    eb:SetAutoFocus(false)
+    eb:SetMaxLetters(6)
+    eb:SetPoint("LEFT", anchor, "RIGHT", 8, 0)
+    return eb
+end
+
+local function PosButton(text, width, anchor)
+    local b = CreateFrame("Button", nil, posPanel, "UIPanelButtonTemplate")
+    b:SetSize(width, 22)
+    b:SetText(text)
+    b:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+    return b
+end
+
+local xLabel = PosLabel("X", posPanel, 10)
+local xBox = PosBox(xLabel)
+local yLabel = PosLabel("Y", xBox, 10)
+local yBox = PosBox(yLabel)
+local setBtn = PosButton("Set", 46, yBox)
+local centerBtn = PosButton("Center", 62, setBtn)
+local lockBtn = PosButton("Lock", 52, centerBtn)
+
+local function FillPosBoxes()
+    local x, y = GetFlashOffset()
+    xBox:SetText(tostring(x))
+    yBox:SetText(tostring(y))
+end
+
+local function ApplyPosBoxes()
+    local x, y = tonumber(xBox:GetText()), tonumber(yBox:GetText())
+    if x and y then
+        SetFlashOffset(x, y)
+    else
+        Print("Type a number in both X and Y (negative is fine, e.g. -120).")
+    end
+    xBox:ClearFocus()
+    yBox:ClearFocus()
+    FillPosBoxes()
+end
+
+for _, eb in ipairs({ xBox, yBox }) do
+    eb:SetScript("OnEnterPressed", ApplyPosBoxes)
+    eb:SetScript("OnEscapePressed", function(self) self:ClearFocus(); FillPosBoxes() end)
+    eb:SetScript("OnTabPressed", function(self) (self == xBox and yBox or xBox):SetFocus() end)
+end
+setBtn:SetScript("OnClick", ApplyPosBoxes)
+centerBtn:SetScript("OnClick", function()
+    local _, y = GetFlashOffset()
+    SetFlashOffset(0, y)
+    FillPosBoxes()
+end)
+lockBtn:SetScript("OnClick", function() SetUnlocked(false) end)
+
+flashFrame:SetScript("OnMouseDown", function(self, button)
+    if unlocked and button == "LeftButton" then self:StartMoving() end
+end)
+flashFrame:SetScript("OnMouseUp", function(self)
+    if not unlocked then return end
+    self:StopMovingOrSizing()
+    SetFlashOffset(GetFlashOffset())
+    FillPosBoxes()
+end)
+
+function SetUnlocked(on)
     unlocked = on
     flashFrame:EnableMouse(on)
     if on then
-        flashText:SetText((FlashLine(SAMPLE))) -- extra parens: only the text, not the count
+        flashText:SetText((FlashLine(SampleSet()))) -- extra parens: only the text, not the count
         FitFlash()
         anchorBg:Show()
         anchorHint:Show()
-        ShowFlashOffset()
+        posPanel:Show()
+        FillPosBoxes()
         flashFrame:SetAlpha(1)
         flashFrame:Show()
-        Print("Unlocked. Drag the blue box to move the on-screen text, then type /zt lock.")
+        Print("Unlocked. Drag the blue box or type a position, then click Lock (or left-click the minimap button).")
     else
+        xBox:ClearFocus()
+        yBox:ClearFocus()
         anchorBg:Hide()
         anchorHint:Hide()
+        posPanel:Hide()
         flashFrame:Hide()
-        Print("Locked. Type /zt resetpos to put the text back under the zone name.")
+        Print("Locked.")
     end
 end
 
-local lastFlashKey -- zone + flash types, so towns inside the same zone don't re-flash
+local lastFlashKey -- zone + shown types, so towns inside the same zone don't re-flash
 
 local function CheckFlash()
     if not ZoneTypeDB or not ZoneTypeDB.flash then return end
@@ -449,12 +597,292 @@ local function CheckFlash()
     if IsSecret(zone) then zone = "?" end
     local key = tostring(zone)
     for _, f in ipairs(FLASH) do
-        if set[f.key] then key = key .. "|" .. f.key end
+        if set[f.key] and IsTracked(f.key) then key = key .. "|" .. f.key end
     end
     if key == lastFlashKey then return end
     lastFlashKey = key
     ShowFlash(set)
 end
+
+---------------------------------------------------------------------------
+-- Settings (Esc > Options > AddOns > ZoneType, or right-click the minimap
+-- button). Falls back to our own small window if the Settings API differs.
+---------------------------------------------------------------------------
+
+local UpdateMinimapButton -- defined in the Minimap section
+
+function OptionChanged(id)
+    if id == "flashSize" then
+        ApplyFlashSize()
+        if not unlocked then ShowFlash(SampleSet(), true) end -- preview the new size
+    elseif id == "showMinimap" then
+        UpdateMinimapButton()
+    elseif id:sub(1, 6) == "track_" then
+        lastFlashKey = nil
+        if unlocked then
+            flashText:SetText((FlashLine(SampleSet())))
+            FitFlash()
+        end
+    end
+end
+
+local SIZE_MIN, SIZE_MAX = 12, 60
+
+local blizzCategory
+
+local function RegisterBlizzardSettings()
+    if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting
+            and Settings.CreateCheckbox and Settings.RegisterAddOnCategory) then
+        return false
+    end
+    local ok = pcall(function()
+        local category, layout = Settings.RegisterVerticalLayoutCategory("ZoneType")
+
+        local function Header(text)
+            if layout and CreateSettingsListSectionHeaderInitializer then
+                layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text))
+            end
+        end
+
+        local function Register(id, name, default)
+            local tbl, field = OptionSlot(id)
+            local setting = Settings.RegisterAddOnSetting(category, "ZoneType_" .. id, field, tbl, type(default), name, default)
+            setting:SetValueChangedCallback(function() OptionChanged(id) end)
+            blizzSettings[id] = setting
+            return setting
+        end
+
+        local function Check(id, name, default, tooltip)
+            Settings.CreateCheckbox(category, Register(id, name, default), tooltip)
+        end
+
+        Header("On-screen text")
+        Check("flash", "Pop up area types on screen", true,
+            "Shows the area types under the zone name when you enter a new zone.\nTo move the text, left-click the minimap button or type /zt unlock.")
+
+        -- Text size: a slider if this client has one, otherwise a drop-down
+        local sizeSetting = Register("flashSize", "Text size", DEFAULT_SIZE)
+        local sliderOk = Settings.CreateSlider and Settings.CreateSliderOptions and pcall(function()
+            local options = Settings.CreateSliderOptions(SIZE_MIN, SIZE_MAX, 1)
+            if MinimalSliderWithSteppersMixin and options.SetLabelFormatter then
+                options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+            end
+            Settings.CreateSlider(category, sizeSetting, options, "Size of the on-screen text. The game's own subzone text is " .. DEFAULT_SIZE .. ".")
+        end)
+        if not sliderOk and Settings.CreateDropdown and Settings.CreateControlTextContainer then
+            Settings.CreateDropdown(category, sizeSetting, function()
+                local c = Settings.CreateControlTextContainer()
+                c:Add(18, "Small")
+                c:Add(DEFAULT_SIZE, "Normal")
+                c:Add(36, "Large")
+                c:Add(48, "Huge")
+                return c:GetData()
+            end, "Size of the on-screen text.")
+        end
+
+        Header("Area types to pop up")
+        for _, f in ipairs(FLASH) do
+            Check("track_" .. f.key, f.name, DEFAULT_TRACKED[f.key] or false,
+                "Show |c" .. f.color .. f.label .. "|r on screen when you enter an area of this type.")
+        end
+
+        Header("Other")
+        Check("auto", "Chat message when the area type changes", true,
+            "Prints the area types in chat when you move somewhere different.")
+        Check("showMinimap", "Show minimap button", true,
+            "If hidden, bring it back with /zt minimap.")
+
+        Settings.RegisterAddOnCategory(category)
+        blizzCategory = category
+    end)
+    if not ok then blizzCategory = nil end
+    return ok
+end
+
+-- Our own small settings window, only used if the Blizzard panel didn't register
+local ownSettings
+
+local function BuildOwnSettings()
+    local f = CreateFrame("Frame", "ZoneTypeSettingsFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    f:SetSize(280, 120 + 26 * (#FLASH + 3))
+    f:SetPoint("CENTER")
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    if f.SetBackdrop then
+        f:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 14, insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        f:SetBackdropColor(0.05, 0.05, 0.07, 0.95)
+    end
+    tinsert(UISpecialFrames, "ZoneTypeSettingsFrame") -- Esc closes it
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -12)
+    title:SetText("ZoneType")
+    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", 0, 0)
+
+    local y = -40
+    local function Section(text)
+        local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        fs:SetPoint("TOPLEFT", 16, y)
+        fs:SetText(text)
+        y = y - 20
+    end
+    local function Check(id, label)
+        local cb = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+        cb:SetSize(24, 24)
+        cb:SetPoint("TOPLEFT", 16, y)
+        y = y - 26
+        local fs = cb.Text or cb.text
+        if not fs then
+            fs = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        end
+        fs:SetText(label)
+        cb:SetScript("OnShow", function(self) self:SetChecked(GetOption(id) and true or false) end)
+        cb:SetScript("OnClick", function(self) SetOption(id, self:GetChecked() and true or false) end)
+    end
+
+    Section("On-screen text")
+    Check("flash", "Pop up area types on screen")
+    -- Text size:  [-]  26  [+]
+    local sizeLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    sizeLabel:SetPoint("TOPLEFT", 22, y - 4)
+    local function SizeButton(text, delta, x)
+        local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        b:SetSize(24, 20)
+        b:SetText(text)
+        b:SetPoint("TOPLEFT", x, y)
+        b:SetScript("OnClick", function()
+            local size = (ZoneTypeDB.flashSize or DEFAULT_SIZE) + delta
+            SetOption("flashSize", math.max(SIZE_MIN, math.min(SIZE_MAX, size)))
+            sizeLabel:SetText("Text size: " .. ZoneTypeDB.flashSize)
+        end)
+    end
+    SizeButton("-", -2, 130)
+    SizeButton("+", 2, 158)
+    sizeLabel:SetScript("OnShow", function(self) self:SetText("Text size: " .. (ZoneTypeDB.flashSize or DEFAULT_SIZE)) end)
+    sizeLabel:SetText("Text size: " .. (ZoneTypeDB.flashSize or DEFAULT_SIZE))
+    y = y - 30
+
+    Section("Area types to pop up")
+    for _, ft in ipairs(FLASH) do Check("track_" .. ft.key, "|c" .. ft.color .. ft.name .. "|r") end
+
+    Section("Other")
+    Check("auto", "Chat message when the area type changes")
+    Check("showMinimap", "Show minimap button")
+
+    f:SetHeight(-y + 16)
+    f:Hide()
+    return f
+end
+
+-- Open settings: the Blizzard AddOns page if it registered, otherwise our own window
+local function OpenSettings()
+    local panel = SettingsPanel
+    -- Clicking again closes it
+    if panel and panel:IsShown() then
+        HideUIPanel(panel)
+        return
+    end
+    if ownSettings and ownSettings:IsShown() then
+        ownSettings:Hide()
+        return
+    end
+    if blizzCategory then
+        local id = (blizzCategory.GetID and blizzCategory:GetID()) or blizzCategory.ID
+        -- Try the different ways this has worked across game versions, and
+        -- check the panel actually appeared after each one.
+        if Settings and Settings.OpenToCategory then pcall(Settings.OpenToCategory, id) end
+        if panel and not panel:IsShown() and panel.OpenToCategory then
+            pcall(panel.OpenToCategory, panel, id)
+        end
+        if panel and not panel:IsShown() then
+            pcall(ShowUIPanel, panel)
+            if panel:IsShown() and panel.SelectCategory then pcall(panel.SelectCategory, panel, blizzCategory) end
+        end
+        if panel and panel:IsShown() then return end
+    end
+    ownSettings = ownSettings or BuildOwnSettings()
+    ownSettings:Show()
+end
+
+---------------------------------------------------------------------------
+-- Minimap button: left-click = unlock/lock the text, right-click = settings,
+-- drag = move
+---------------------------------------------------------------------------
+
+local mm = CreateFrame("Button", "ZoneTypeMinimapButton", Minimap)
+mm:SetSize(31, 31)
+mm:SetFrameStrata("MEDIUM")
+mm:SetFrameLevel(8)
+mm:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+mm:RegisterForDrag("LeftButton")
+mm:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+
+local mmBg = mm:CreateTexture(nil, "BACKGROUND")
+mmBg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+mmBg:SetSize(20, 20)
+mmBg:SetPoint("TOPLEFT", 7, -5)
+
+local mmIcon = mm:CreateTexture(nil, "ARTWORK")
+mmIcon:SetSize(18, 18)
+mmIcon:SetPoint("TOPLEFT", 7, -6)
+mmIcon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+mmIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- trim the icon's built-in border
+
+local mmBorder = mm:CreateTexture(nil, "OVERLAY")
+mmBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+mmBorder:SetSize(53, 53)
+mmBorder:SetPoint("TOPLEFT")
+
+local function UpdateMinimapPosition()
+    local angle = math.rad(ZoneTypeDB.minimapAngle or 200)
+    local radius = (Minimap:GetWidth() / 2) + 5
+    mm:ClearAllPoints()
+    mm:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+function UpdateMinimapButton()
+    mm:SetShown(ZoneTypeDB.showMinimap and true or false)
+    UpdateMinimapPosition()
+end
+
+mm:SetScript("OnDragStart", function(self)
+    self:SetScript("OnUpdate", function()
+        local mx, my = Minimap:GetCenter()
+        local px, py = GetCursorPosition()
+        local scale = Minimap:GetEffectiveScale()
+        ZoneTypeDB.minimapAngle = math.deg(math.atan2(py / scale - my, px / scale - mx))
+        UpdateMinimapPosition()
+    end)
+end)
+mm:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+
+mm:SetScript("OnClick", function(_, button)
+    if button == "RightButton" then
+        OpenSettings()
+    else
+        SetUnlocked(not unlocked)
+    end
+end)
+
+mm:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine("ZoneType")
+    GameTooltip:AddLine(unlocked and "Left-click: lock the on-screen text" or "Left-click: unlock and move the on-screen text", 1, 1, 1)
+    GameTooltip:AddLine("Right-click: settings", 1, 1, 1)
+    GameTooltip:AddLine("Drag: move this button", 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+end)
+mm:SetScript("OnLeave", GameTooltip_Hide)
+mm:Hide() -- shown once settings load
 
 ---------------------------------------------------------------------------
 -- Test
@@ -518,9 +946,19 @@ events:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         if ... == ADDON_NAME then
             ZoneTypeDB = ZoneTypeDB or {}
-            if ZoneTypeDB.auto == nil then ZoneTypeDB.auto = true end
-            if ZoneTypeDB.flash == nil then ZoneTypeDB.flash = true end
+            local db = ZoneTypeDB
+            if db.auto == nil then db.auto = true end
+            if db.flash == nil then db.flash = true end
+            if db.showMinimap == nil then db.showMinimap = true end
+            if db.flashSize == nil then db.flashSize = DEFAULT_SIZE end
+            db.track = db.track or {}
+            for _, f in ipairs(FLASH) do
+                if db.track[f.key] == nil then db.track[f.key] = DEFAULT_TRACKED[f.key] or false end
+            end
             PlaceFlash() -- saved position is only readable now
+            ApplyFlashSize()
+            RegisterBlizzardSettings()
+            UpdateMinimapButton()
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Instance info can lag behind after a loading screen
@@ -542,16 +980,21 @@ SlashCmdList.ZONETYPE = function(msg)
     if cmd == "" then
         Report(false)
     elseif cmd == "auto" then
-        ZoneTypeDB.auto = not ZoneTypeDB.auto
-        Print("Announce area type when you change zones:", ZoneTypeDB.auto and "ON" or "OFF")
+        SetOption("auto", not ZoneTypeDB.auto)
+        Print("Chat message when the area type changes:", ZoneTypeDB.auto and "ON" or "OFF")
     elseif cmd == "flash" then
         if rest == "test" then
-            ShowFlash(SAMPLE)
-            Print("Showing a sample flash.")
+            ShowFlash(SampleSet(), true)
+            Print("Showing a sample.")
         else
-            ZoneTypeDB.flash = not ZoneTypeDB.flash
-            Print("Flash area types on screen:", ZoneTypeDB.flash and "ON" or "OFF")
+            SetOption("flash", not ZoneTypeDB.flash)
+            Print("Pop up area types on screen:", ZoneTypeDB.flash and "ON" or "OFF")
         end
+    elseif cmd == "settings" or cmd == "config" or cmd == "options" then
+        OpenSettings()
+    elseif cmd == "minimap" then
+        SetOption("showMinimap", not ZoneTypeDB.showMinimap)
+        Print("Minimap button:", ZoneTypeDB.showMinimap and "shown" or "hidden")
     elseif cmd == "unlock" or cmd == "move" then
         SetUnlocked(not unlocked)
     elseif cmd == "lock" then
@@ -567,7 +1010,7 @@ SlashCmdList.ZONETYPE = function(msg)
         end
         if x and y then
             SetFlashOffset(x, y)
-            if unlocked then ShowFlashOffset() else ShowFlash(SAMPLE) end
+            if unlocked then FillPosBoxes() else ShowFlash(SampleSet(), true) end
             Print(("On-screen text moved to x %d, y %d (from the middle of the screen)."):format(x, y))
         else
             Print(("On-screen text is at x %d, y %d (pixels from the middle of the screen; + is right/up)."):format(cx, cy))
@@ -576,6 +1019,7 @@ SlashCmdList.ZONETYPE = function(msg)
     elseif cmd == "resetpos" then
         ZoneTypeDB.flashPos = nil
         PlaceFlash()
+        if unlocked then FillPosBoxes() end
         Print("On-screen text moved back under the zone name.")
     elseif cmd == "list" then
         ListType(rest)
@@ -586,13 +1030,15 @@ SlashCmdList.ZONETYPE = function(msg)
     else
         Print("Commands:")
         Print("  /zt - what area type you're in")
-        Print("  /zt list [type] - places that count as a type (e.g. /zt list desert)")
-        Print("  /zt auto - turn the zone-change message on/off")
-        Print("  /zt flash - turn the on-screen area-type flash on/off")
-        Print("  /zt flash test - show a sample flash")
-        Print("  /zt unlock / lock - move the on-screen text")
+        Print("  /zt settings - open settings (or right-click the minimap button)")
+        Print("  /zt unlock / lock - move the on-screen text (or left-click the minimap button)")
         Print("  /zt pos <x> <y> - place the on-screen text by numbers (/zt pos center centers it)")
         Print("  /zt resetpos - put the on-screen text back under the zone name")
+        Print("  /zt flash - turn the on-screen pop-up on/off")
+        Print("  /zt flash test - show a sample")
+        Print("  /zt auto - turn the zone-change chat message on/off")
+        Print("  /zt minimap - show/hide the minimap button")
+        Print("  /zt list [type] - places that count as a type (e.g. /zt list desert)")
         Print("  /zt where - what the game reports about this spot (for bug reports)")
         Print("  /zt test - check the addon is working")
     end
