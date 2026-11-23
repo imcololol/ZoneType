@@ -2,7 +2,7 @@
 
 ## v0.2.0
 
-- New: when you enter a Grassland or Desert area, it flashes on screen under the zone name (Grassland in green, Desert in gold). `/zt flash` turns it off, `/zt flash test` shows a sample.
+- New: when you enter a Grassland or Desert area, it shows on screen under the zone name in the same style as the game's zone text (Grassland in green, Desert in gold). `/zt flash` turns it off, `/zt flash test` shows a sample.
 
 ## v0.1.1
 

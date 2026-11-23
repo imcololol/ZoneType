@@ -292,14 +292,16 @@ flashFrame:SetSize(600, 80)
 flashFrame:SetFrameStrata("HIGH")
 -- Sit just under the subzone line of the game's zone text when we can find it
 if SubZoneTextString then
-    flashFrame:SetPoint("TOP", SubZoneTextString, "BOTTOM", 0, -10)
+    flashFrame:SetPoint("TOP", SubZoneTextString, "BOTTOM", 0, -4)
 else
     flashFrame:SetPoint("TOP", UIParent, "TOP", 0, -330)
 end
 flashFrame:Hide()
 
 local flashText = flashFrame:CreateFontString(nil, "OVERLAY")
-local zoneFont = _G.ZoneTextFont or _G.GameFontNormalHuge
+-- Same font as the game's subzone line ("Southfury River"), so ours reads
+-- like a second line of the game's own zone text
+local zoneFont = _G.SubZoneTextFont or _G.ZoneTextFont or _G.GameFontNormalLarge
 if zoneFont then flashText:SetFontObject(zoneFont) end
 flashText:SetTextColor(1, 1, 1) -- real colors come from the color codes
 flashText:SetPoint("TOP")
