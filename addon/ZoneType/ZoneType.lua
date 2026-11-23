@@ -276,7 +276,7 @@ local function Where()
 end
 
 ---------------------------------------------------------------------------
--- On-screen flash (Grassland / Desert)
+-- On-screen flash (Grassland / Desert / Wasteland / Haunted)
 ---------------------------------------------------------------------------
 
 -- Big text under the game's own zone name, for the area types Cole cares
@@ -284,6 +284,8 @@ end
 local FLASH = {
     { key = "forest", label = "Grassland", color = "ff00ff00" }, -- plain green
     { key = "desert", label = "Desert",    color = "ffffd060" }, -- same as chat
+    { key = "waste",  label = "Wasteland", color = "ffb08a5a" }, -- same as chat
+    { key = "haunted", label = "Haunted",  color = "ffa78bd6" }, -- same as chat
     fadeIn = 0.5, hold = 2.5, fadeOut = 1.5,
 }
 
@@ -329,7 +331,9 @@ local function ShowFlash(set)
         if set[f.key] then lines[#lines + 1] = "|c" .. f.color .. f.label .. "|r" end
     end
     if #lines == 0 then return false end
-    flashText:SetText(table.concat(lines, "\n"))
+    -- Places often have several (Tirisfal is Grassland, Wasteland and Haunted),
+    -- so keep them on one line instead of stacking down the screen
+    flashText:SetText(table.concat(lines, "  |cffffffff\194\183|r  "))
     flashElapsed = 0
     flashFrame:SetAlpha(0)
     flashFrame:Show()
@@ -442,11 +446,11 @@ SlashCmdList.ZONETYPE = function(msg)
         Print("Announce area type when you change zones:", ZoneTypeDB.auto and "ON" or "OFF")
     elseif cmd == "flash" then
         if rest == "test" then
-            ShowFlash({ forest = true, desert = true })
+            ShowFlash({ forest = true, desert = true, waste = true, haunted = true })
             Print("Showing a sample flash.")
         else
             ZoneTypeDB.flash = not ZoneTypeDB.flash
-            Print("Flash Grassland/Desert on screen:", ZoneTypeDB.flash and "ON" or "OFF")
+            Print("Flash area types on screen:", ZoneTypeDB.flash and "ON" or "OFF")
         end
     elseif cmd == "list" then
         ListType(rest)
@@ -459,7 +463,7 @@ SlashCmdList.ZONETYPE = function(msg)
         Print("  /zt - what area type you're in")
         Print("  /zt list [type] - places that count as a type (e.g. /zt list desert)")
         Print("  /zt auto - turn the zone-change message on/off")
-        Print("  /zt flash - turn the on-screen Grassland/Desert flash on/off")
+        Print("  /zt flash - turn the on-screen area-type flash on/off")
         Print("  /zt flash test - show a sample flash")
         Print("  /zt where - what the game reports about this spot (for bug reports)")
         Print("  /zt test - check the addon is working")
