@@ -371,12 +371,21 @@ end
 
 local SAMPLE = { forest = true, desert = true, waste = true, haunted = true }
 
+-- Fit the frame (and the blue unlock box) to the text, with some padding,
+-- so long lines like all four types don't hang off the edges
+local function FitFlash()
+    local w = flashText:GetStringWidth() or 0
+    local h = flashText:GetStringHeight() or 0
+    flashFrame:SetSize(math.max(200, w + 40), math.max(30, h + 16))
+end
+
 -- set = area types like { forest = true, desert = true }. Returns true if shown.
 local function ShowFlash(set)
     if unlocked then return false end -- don't fight the player while they move it
     local text, count = FlashLine(set)
     if count == 0 then return false end
     flashText:SetText(text)
+    FitFlash()
     flashElapsed = 0
     flashFrame:SetAlpha(0)
     flashFrame:Show()
@@ -388,6 +397,7 @@ local function SetUnlocked(on)
     flashFrame:EnableMouse(on)
     if on then
         flashText:SetText((FlashLine(SAMPLE))) -- extra parens: only the text, not the count
+        FitFlash()
         anchorBg:Show()
         anchorHint:Show()
         flashFrame:SetAlpha(1)
