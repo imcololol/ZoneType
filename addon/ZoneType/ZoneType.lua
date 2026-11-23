@@ -351,18 +351,39 @@ end)
 flashFrame:SetScript("OnMouseDown", function(self, button)
     if unlocked and button == "LeftButton" then self:StartMoving() end
 end)
+-- Where the text's middle is, in pixels from the middle of the screen
+-- (x: + is right, y: + is up). Rounded so the numbers are easy to type.
+local function GetFlashOffset()
+    local cx, cy = flashFrame:GetCenter()
+    local ux, uy = UIParent:GetCenter()
+    if not (cx and ux) then
+        -- Hidden frames don't always know where they are; fall back to the saved spot
+        local pos = ZoneTypeDB and ZoneTypeDB.flashPos
+        if pos and pos.point == "CENTER" then return pos.x, pos.y end
+        return 0, 0
+    end
+    return math.floor(cx - ux + 0.5), math.floor(cy - uy + 0.5)
+end
+
+-- Saved by the center, so when the box resizes to fit shorter or longer
+-- text it grows evenly both ways and stays centered on the spot
+local function SetFlashOffset(x, y)
+    ZoneTypeDB.flashPos = { point = "CENTER", relPoint = "CENTER", x = x, y = y }
+    flashFrame:ClearAllPoints()
+    flashFrame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+end
+
+local function ShowFlashOffset()
+    local x, y = GetFlashOffset()
+    anchorHint:SetText(("ZoneType: drag to move, then type /zt lock   (x %d, y %d)"):format(x, y))
+    return x, y
+end
+
 flashFrame:SetScript("OnMouseUp", function(self)
     if not unlocked then return end
     self:StopMovingOrSizing()
-    -- Save the spot by its center, so when the box later resizes to fit
-    -- shorter or longer text it grows evenly both ways and stays centered
-    local cx, cy = self:GetCenter()
-    local ux, uy = UIParent:GetCenter()
-    if cx and ux then
-        ZoneTypeDB.flashPos = { point = "CENTER", relPoint = "CENTER", x = cx - ux, y = cy - uy }
-        self:ClearAllPoints()
-        self:SetPoint("CENTER", UIParent, "CENTER", cx - ux, cy - uy)
-    end
+    SetFlashOffset(GetFlashOffset())
+    ShowFlashOffset()
 end)
 
 local function FlashLine(set)
@@ -406,6 +427,7 @@ local function SetUnlocked(on)
         FitFlash()
         anchorBg:Show()
         anchorHint:Show()
+        ShowFlashOffset()
         flashFrame:SetAlpha(1)
         flashFrame:Show()
         Print("Unlocked. Drag the blue box to move the on-screen text, then type /zt lock.")
@@ -534,6 +556,23 @@ SlashCmdList.ZONETYPE = function(msg)
         SetUnlocked(not unlocked)
     elseif cmd == "lock" then
         if unlocked then SetUnlocked(false) else Print("Already locked.") end
+    elseif cmd == "pos" then
+        -- /zt pos 0 150, /zt pos 0,150, /zt pos center (x = 0, keep y)
+        local cx, cy = GetFlashOffset()
+        local x, y = rest:match("^(%-?[%d%.]+)[%s,]+(%-?[%d%.]+)$")
+        if rest == "center" then
+            x, y = 0, cy
+        elseif x then
+            x, y = tonumber(x), tonumber(y)
+        end
+        if x and y then
+            SetFlashOffset(x, y)
+            if unlocked then ShowFlashOffset() else ShowFlash(SAMPLE) end
+            Print(("On-screen text moved to x %d, y %d (from the middle of the screen)."):format(x, y))
+        else
+            Print(("On-screen text is at x %d, y %d (pixels from the middle of the screen; + is right/up)."):format(cx, cy))
+            Print("Type /zt pos <x> <y> to move it, e.g. /zt pos 0 200, or /zt pos center.")
+        end
     elseif cmd == "resetpos" then
         ZoneTypeDB.flashPos = nil
         PlaceFlash()
@@ -552,6 +591,7 @@ SlashCmdList.ZONETYPE = function(msg)
         Print("  /zt flash - turn the on-screen area-type flash on/off")
         Print("  /zt flash test - show a sample flash")
         Print("  /zt unlock / lock - move the on-screen text")
+        Print("  /zt pos <x> <y> - place the on-screen text by numbers (/zt pos center centers it)")
         Print("  /zt resetpos - put the on-screen text back under the zone name")
         Print("  /zt where - what the game reports about this spot (for bug reports)")
         Print("  /zt test - check the addon is working")

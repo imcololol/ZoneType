@@ -37,6 +37,8 @@ You should end up with `AddOns\ZoneType\ZoneType.toc`.
 | `/zt flash test` | Show a sample flash |
 | `/zt unlock` | Show a box you can drag to move the on-screen text |
 | `/zt lock` | Stop moving it (the spot is saved) |
+| `/zt pos <x> <y>` | Place the on-screen text by numbers: pixels from the middle of the screen, + is right/up (e.g. `/zt pos 0 200`). `/zt pos` alone shows where it is now |
+| `/zt pos center` | Center the on-screen text left-to-right, keeping its height |
 | `/zt resetpos` | Put the on-screen text back under the zone name |
 | `/zt auto` | Turn the zone-change message on or off |
 | `/zt where` | Show what the game reports about your location (for bug reports) |
