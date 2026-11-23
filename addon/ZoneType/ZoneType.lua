@@ -276,6 +276,82 @@ local function Where()
 end
 
 ---------------------------------------------------------------------------
+-- On-screen flash (Grassland / Desert)
+---------------------------------------------------------------------------
+
+-- Big text under the game's own zone name, for the area types Cole cares
+-- about most. Same feel as the zone text: fade in, hold, fade out.
+local FLASH = {
+    { key = "forest", label = "Grassland", color = "ff00ff00" }, -- plain green
+    { key = "desert", label = "Desert",    color = "ffffd060" }, -- same as chat
+    fadeIn = 0.5, hold = 2.5, fadeOut = 1.5,
+}
+
+local flashFrame = CreateFrame("Frame", nil, UIParent)
+flashFrame:SetSize(600, 80)
+flashFrame:SetFrameStrata("HIGH")
+-- Sit just under the subzone line of the game's zone text when we can find it
+if SubZoneTextString then
+    flashFrame:SetPoint("TOP", SubZoneTextString, "BOTTOM", 0, -10)
+else
+    flashFrame:SetPoint("TOP", UIParent, "TOP", 0, -330)
+end
+flashFrame:Hide()
+
+local flashText = flashFrame:CreateFontString(nil, "OVERLAY")
+local zoneFont = _G.ZoneTextFont or _G.GameFontNormalHuge
+if zoneFont then flashText:SetFontObject(zoneFont) end
+flashText:SetTextColor(1, 1, 1) -- real colors come from the color codes
+flashText:SetPoint("TOP")
+flashText:SetJustifyH("CENTER")
+
+local flashElapsed = 0
+flashFrame:SetScript("OnUpdate", function(self, dt)
+    flashElapsed = flashElapsed + dt
+    local t = flashElapsed
+    if t < FLASH.fadeIn then
+        self:SetAlpha(t / FLASH.fadeIn)
+    elseif t < FLASH.fadeIn + FLASH.hold then
+        self:SetAlpha(1)
+    elseif t < FLASH.fadeIn + FLASH.hold + FLASH.fadeOut then
+        self:SetAlpha(1 - (t - FLASH.fadeIn - FLASH.hold) / FLASH.fadeOut)
+    else
+        self:Hide()
+    end
+end)
+
+-- set = area types like { forest = true, desert = true }. Returns true if shown.
+local function ShowFlash(set)
+    local lines = {}
+    for _, f in ipairs(FLASH) do
+        if set[f.key] then lines[#lines + 1] = "|c" .. f.color .. f.label .. "|r" end
+    end
+    if #lines == 0 then return false end
+    flashText:SetText(table.concat(lines, "\n"))
+    flashElapsed = 0
+    flashFrame:SetAlpha(0)
+    flashFrame:Show()
+    return true
+end
+
+local lastFlashKey -- zone + flash types, so towns inside the same zone don't re-flash
+
+local function CheckFlash()
+    if not ZoneTypeDB or not ZoneTypeDB.flash then return end
+    local names = GetLocationNames()
+    local set = CombinedTypes(Lookup(names))
+    local zone = names.zone
+    if IsSecret(zone) then zone = "?" end
+    local key = tostring(zone)
+    for _, f in ipairs(FLASH) do
+        if set[f.key] then key = key .. "|" .. f.key end
+    end
+    if key == lastFlashKey then return end
+    lastFlashKey = key
+    ShowFlash(set)
+end
+
+---------------------------------------------------------------------------
 -- Test
 ---------------------------------------------------------------------------
 
@@ -323,12 +399,13 @@ events:RegisterEvent("ZONE_CHANGED_INDOORS")
 
 local pending = false
 local function QueueAutoReport(delay)
-    if not ZoneTypeDB or not ZoneTypeDB.auto or pending then return end
+    if not ZoneTypeDB or pending then return end
     pending = true
     -- Zone text isn't always ready the instant the event fires
     C_Timer.After(delay or 1, function()
         pending = false
-        Report(true)
+        CheckFlash()
+        if ZoneTypeDB.auto then Report(true) end
     end)
 end
 
@@ -337,6 +414,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         if ... == ADDON_NAME then
             ZoneTypeDB = ZoneTypeDB or {}
             if ZoneTypeDB.auto == nil then ZoneTypeDB.auto = true end
+            if ZoneTypeDB.flash == nil then ZoneTypeDB.flash = true end
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Instance info can lag behind after a loading screen
@@ -360,6 +438,14 @@ SlashCmdList.ZONETYPE = function(msg)
     elseif cmd == "auto" then
         ZoneTypeDB.auto = not ZoneTypeDB.auto
         Print("Announce area type when you change zones:", ZoneTypeDB.auto and "ON" or "OFF")
+    elseif cmd == "flash" then
+        if rest == "test" then
+            ShowFlash({ forest = true, desert = true })
+            Print("Showing a sample flash.")
+        else
+            ZoneTypeDB.flash = not ZoneTypeDB.flash
+            Print("Flash Grassland/Desert on screen:", ZoneTypeDB.flash and "ON" or "OFF")
+        end
     elseif cmd == "list" then
         ListType(rest)
     elseif cmd == "where" then
@@ -371,6 +457,8 @@ SlashCmdList.ZONETYPE = function(msg)
         Print("  /zt - what area type you're in")
         Print("  /zt list [type] - places that count as a type (e.g. /zt list desert)")
         Print("  /zt auto - turn the zone-change message on/off")
+        Print("  /zt flash - turn the on-screen Grassland/Desert flash on/off")
+        Print("  /zt flash test - show a sample flash")
         Print("  /zt where - what the game reports about this spot (for bug reports)")
         Print("  /zt test - check the addon is working")
     end

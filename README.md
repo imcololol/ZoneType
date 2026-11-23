@@ -7,6 +7,7 @@ A World of Warcraft: Forever addon that tells you which **area types** your curr
 - Type `/zt` to see what the place you're standing in counts as
 - Shows every type a place has (Tirisfal Glades is Forest & Grassland, Wasteland and Haunted)
 - Knows towns and cities inside zones (Booty Bay, Gadgetzan, Everlook) as well as dungeons, raids and battlegrounds
+- Flashes **Grassland** (green) or **Desert** (gold) on screen under the zone name when you enter one
 - Prints a message when you move into a place with different area types (you can turn this off)
 - `/zt list desert` lists every place of a type, handy for planning where to use an item
 
@@ -32,6 +33,8 @@ You should end up with `AddOns\ZoneType\ZoneType.toc`.
 |---|---|
 | `/zt` (or `/zonetype`) | Show the area types for where you are |
 | `/zt list [type]` | List every place of a type (e.g. `/zt list desert`); with no type, lists the types |
+| `/zt flash` | Turn the on-screen Grassland/Desert flash on or off |
+| `/zt flash test` | Show a sample flash |
 | `/zt auto` | Turn the zone-change message on or off |
 | `/zt where` | Show what the game reports about your location (for bug reports) |
 | `/zt test` | Check that the addon is working |
