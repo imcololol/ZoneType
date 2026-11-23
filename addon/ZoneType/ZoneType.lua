@@ -354,9 +354,15 @@ end)
 flashFrame:SetScript("OnMouseUp", function(self)
     if not unlocked then return end
     self:StopMovingOrSizing()
-    -- StopMovingOrSizing leaves us anchored to UIParent; save that spot
-    local point, _, relPoint, x, y = self:GetPoint(1)
-    ZoneTypeDB.flashPos = { point = point, relPoint = relPoint, x = x, y = y }
+    -- Save the spot by its center, so when the box later resizes to fit
+    -- shorter or longer text it grows evenly both ways and stays centered
+    local cx, cy = self:GetCenter()
+    local ux, uy = UIParent:GetCenter()
+    if cx and ux then
+        ZoneTypeDB.flashPos = { point = "CENTER", relPoint = "CENTER", x = cx - ux, y = cy - uy }
+        self:ClearAllPoints()
+        self:SetPoint("CENTER", UIParent, "CENTER", cx - ux, cy - uy)
+    end
 end)
 
 local function FlashLine(set)
