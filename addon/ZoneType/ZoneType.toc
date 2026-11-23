@@ -5,5 +5,6 @@
 ## IconTexture: Interface\AddOns\ZoneType\icon
 ## Version: 0.2.0
 ## SavedVariables: ZoneTypeDB
+## X-Curse-Project-ID: 1827114
 
 ZoneType.lua

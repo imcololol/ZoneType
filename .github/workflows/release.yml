@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
-      CF_PROJECT_ID: "" # add once the CurseForge project exists
+      CF_PROJECT_ID: "1827114"
     steps:
       - uses: actions/checkout@v4
 
